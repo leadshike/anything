@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Slack Message Interface</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <script src="https://labs.pathfix.com/helper.js" 
+            data-user-id="v3dfdf3vdsfg453452v3" 
+            id="pinc.helper" 
+            modules="pinc.oauth.min" 
+            data-public-key="A94B2042-133D-4868-93C2-A0FB71F99AA6">
+    </script>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <style>
+        .message-form {
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .status-message {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 4px;
+            display: none;
+        }
+
+        .status-message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .status-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .btn .spinner-border {
+            display: none;
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.5rem;
+        }
+
+        .btn.loading .spinner-border {
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="my-4">
+            <div data-oauth-ui="list-columns" 
+                 data-oauth-ui-switches="statusOn,disconnect" 
+                 data-oauth-icon-size="Medium" 
+                 data-oauth-button-color="#007BFF" 
+                 data-oauth-ui-providers="slackv2" 
+                 data-oauth-ui-providerTypes="">
+            </div>
+        </div>
+
+        <div class="message-form bg-white">
+            <h3 class="mb-4">Send Slack Message</h3>
+            
+            <div class="mb-3">
+                <label for="channelSelect" class="form-label">Select Channel</label>
+                <select class="form-select" id="channelSelect">
+                    <option value="">Choose a channel...</option>
+                </select>
+                <button onclick="refreshChannels()" class="btn btn-secondary mt-2" id="refreshButton">
+                    <span class="spinner-border" role="status"></span>
+                    Refresh Channels
+                </button>
+            </div>
+
+            <div class="mb-3">
+                <label for="messageText" class="form-label">Message</label>
+                <textarea class="form-control" id="messageText" rows="4" placeholder="Type your message here..."></textarea>
+            </div>
+
+            <button onclick="sendMessage()" class="btn btn-primary w-100" id="sendButton">
+                <span class="spinner-border" role="status"></span>
+                Send Message
+            </button>
+
+            <div id="statusMessage" class="status-message"></div>
+        </div>
+    </div>
+
+    <script>
+        const loggedInUser = "v3dfdf3vdsfg453452v3";
+        const pfaClientId = "A94B2042-133D-4868-93C2-A0FB71F99AA6";
+
+        function showStatus(message, isError = false) {
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.textContent = message;
+            statusMessage.style.display = 'block';
+            statusMessage.className = 'status-message ' + (isError ? 'error' : 'success');
+            setTimeout(() => {
+                statusMessage.style.display = 'none';
+            }, 3000);
+        }
+
+        function loadChannels(showLoadingState = false) {
+            const refreshButton = document.getElementById('refreshButton');
+            
+            if (showLoadingState) {
+                refreshButton.classList.add('loading');
+                refreshButton.disabled = true;
+            }
+
+            var pfaPayload = {
+                "url": "https://slack.com/api/conversations.list",
+                "method": "GET",
+                "headers": {
+                    "Content-Type": "application/json"
+                }
+            };
+
+            var pfaUrl = new URL("https://labs.pathfix.com/oauth/method/slackv2/call");
+            pfaUrl.searchParams.set("user_id", loggedInUser);
+            pfaUrl.searchParams.set("public_key", pfaClientId);
+
+            return $.post(pfaUrl, JSON.stringify(pfaPayload))
+                .then(response => {
+                    const channelSelect = document.getElementById('channelSelect');
+                    channelSelect.innerHTML = '<option value="">Choose a channel...</option>';
+                    
+                    if (response.rows?.[0]?.data?.channels) {
+                        response.rows[0].data.channels.forEach(channel => {
+                            const option = document.createElement('option');
+                            option.value = channel.id;
+                            option.textContent = `#${channel.name}`;
+                            channelSelect.appendChild(option);
+                        });
+                        if (showLoadingState) {
+                            showStatus('Channels loaded successfully!');
+                            refreshButton.classList.remove('loading');
+                            refreshButton.disabled = false;
+                        }
+                    }
+                })
+                .catch(() => {
+                    if (showLoadingState) {
+                        showStatus('Failed to load channels', true);
+                        refreshButton.classList.remove('loading');
+                        refreshButton.disabled = false;
+                    }
+                });
+        }
+
+        function refreshChannels() {
+            loadChannels(true);
+        }
+
+        function sendMessage() {
+            const channelId = document.getElementById('channelSelect').value;
+            const message = document.getElementById('messageText').value.trim();
+            const sendButton = document.getElementById('sendButton');
+
+            if (!channelId || !message) {
+                showStatus('Please select a channel and enter a message', true);
+                return;
+            }
+
+            sendButton.classList.add('loading');
+            sendButton.disabled = true;
+
+            var joinPayload = {
+                "url": "https://slack.com/api/conversations.join",
+                "method": "POST",
+                "payload": {
+                    "channel": channelId
+                },
+                "headers": {
+                    "Content-Type": "application/json"
+                }
+            };
+
+            var joinUrl = new URL("https://labs.pathfix.com/oauth/method/slackv2/call");
+            joinUrl.searchParams.set("user_id", loggedInUser);
+            joinUrl.searchParams.set("public_key", pfaClientId);
+
+            $.post(joinUrl, JSON.stringify(joinPayload))
+                .then(() => {
+                    var messagePayload = {
+                        "url": "https://slack.com/api/chat.postMessage",
+                        "method": "POST",
+                        "payload": {
+                            "channel": channelId,
+                            "text": message
+                        },
+                        "headers": {
+                            "Content-Type": "application/json"
+                        }
+                    };
+
+                    var messageUrl = new URL("https://labs.pathfix.com/oauth/method/slackv2/call");
+                    messageUrl.searchParams.set("user_id", loggedInUser);
+                    messageUrl.searchParams.set("public_key", pfaClientId);
+
+                    return $.post(messageUrl, JSON.stringify(messagePayload));
+                })
+                .then(response => {
+                    if (response.rows?.[0]?.data?.ok) {
+                        showStatus('Message sent successfully!');
+                        document.getElementById('messageText').value = '';
+                        sendButton.classList.remove('loading');
+                        sendButton.disabled = false;
+                    } else {
+                        throw new Error('Failed to send message');
+                    }
+                })
+                .catch(() => {
+                    showStatus('Failed to send message', true);
+                    sendButton.classList.remove('loading');
+                    sendButton.disabled = false;
+                });
+        }
+
+        $(document).ready(function() {
+            loadChannels(false);
+        });
+    </script>
+</body>
+</html>
